@@ -1,0 +1,101 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: 
+  name: {{ include "mychart.fullname" . }}-db
+  labels:
+    app: {{ include "mychart.fullname" . }}-db
+spec: 
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      app: {{ include "mychart.fullname" . }}-db
+  template: 
+    metadata:
+      labels:
+        app: {{ include "mychart.fullname" . }}-db
+    spec: 
+      containers: 
+        - env: 
+            - name: MARIADB_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "mychart.fullname" . }}-db-secret
+                  key: db-root-password
+            - name: MARIADB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "mychart.fullname" . }}-db-secret
+                  key: db-username
+            - name: MARIADB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "mychart.fullname" . }}-db-secret
+                  key: db-password
+            - name: MARIADB_DATABASE
+              value: "{{ .Values.database.name }}"
+          image: "{{ .Values.image.repository.database }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          name: {{ .Values.database.name }}
+          ports: 
+            - containerPort: {{ .Values.database.port }}
+              name: {{ .Values.database.name }}
+              protocol: TCP
+          volumeMounts: 
+            - mountPath: /var/lib/mysql
+              name: vol-db
+      volumes: 
+        - name: vol-db
+          persistentVolumeClaim: 
+            claimName: {{ include "mychart.fullname" . }}-db-pvc
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: 
+  labels: 
+    app: {{ include "mychart.fullname" . }}-drupal
+  name: {{ include "mychart.fullname" . }}-drupal
+spec: 
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      app: {{ include "mychart.fullname" . }}-drupal
+  template: 
+    metadata: 
+      labels: 
+        app: {{ include "mychart.fullname" . }}-drupal
+    spec: 
+      initContainers:
+        - name: init-sites-volume
+          image: "{{ .Values.image.repository.drupal }}"
+          command: ['/bin/bash', '-c']
+          args: ['cp -r /var/www/html/sites/ /data/; chown www-data:www-data /data/ -R']
+          volumeMounts:
+          - mountPath: /data
+            name: vol-drupal
+      containers: 
+        - image: "{{ .Values.image.repository.drupal }}"
+          name: {{ .Chart.Name }}-drupal
+          ports: 
+            - containerPort: {{ .Values.service.port }}
+          volumeMounts:
+          - mountPath: /var/www/html/modules
+            name: vol-drupal
+            subPath: modules
+          - mountPath: /var/www/html/profiles
+            name: vol-drupal
+            subPath: profiles
+          - mountPath: /var/www/html/sites
+            name: vol-drupal
+            subPath: sites
+          - mountPath: /var/www/html/themes
+            name: vol-drupal
+            subPath: themes
+      volumes:
+        - name: vol-drupal
+          persistentVolumeClaim: 
+            claimName: {{ include "mychart.fullname" . }}-drupal-pvc
